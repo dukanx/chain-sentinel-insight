@@ -4,7 +4,7 @@ import { EXCHANGE_HOT_WALLET, KNOWN_LABELS } from "./config";
 export type Verdict = "CLEARED" | "REVIEW" | "BLOCKED";
 export type KanbanColumn = "pending" | "awaiting" | "ready";
 
-export type GraphNodeKind = "sender" | "intermediary" | "mixer" | "sanctioned" | "exchange";
+export type GraphNodeKind = "sender" | "intermediary" | "mixer" | "sanctioned" | "exchange" | "wallet";
 
 export interface DepositSignals {
   hopsToSanctioned: number;
