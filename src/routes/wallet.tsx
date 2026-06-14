@@ -29,6 +29,22 @@ export const Route = createFileRoute("/wallet")({
 
 const WALLET_ADDRESS = "RQFwdRxm4vrTRybpdfiHa9eSEiQdpVLPaSXteRXj1S1A";
 
+function SolanaIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 397.7 311.7" className={className} aria-hidden="true">
+      <defs>
+        <linearGradient id="sol-grad" x1="360.879" y1="-37.455" x2="141.213" y2="383.294" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#00ffa3" />
+          <stop offset="1" stopColor="#dc1fff" />
+        </linearGradient>
+      </defs>
+      <path fill="url(#sol-grad)" d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7z" />
+      <path fill="url(#sol-grad)" d="M64.6 3.8C67.1 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8z" />
+      <path fill="url(#sol-grad)" d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.6z" />
+    </svg>
+  );
+}
+
 interface Tx {
   id: string;
   kind: "in" | "out";
@@ -141,18 +157,10 @@ function WalletPage() {
         <div className="w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl bg-[oklch(0.18_0.01_260)] text-white">
           {/* Top bar */}
           <div className="px-5 pt-5 pb-3 flex items-center justify-between">
-            <div className="text-orange-400 font-bold text-xl tracking-tight">Jaxx</div>
+            <div className="text-orange-400 font-bold text-xl tracking-tight">Demo Wallet</div>
             <div className="flex items-center gap-3 text-xs text-white/70">
               <span className="inline-flex items-center gap-1">
-                <span className="size-4 rounded-full bg-orange-500/80 grid place-items-center text-[9px] font-bold">
-                  ₿
-                </span>
-                BTC
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="size-4 rounded-full bg-purple-500/80 grid place-items-center text-[9px] font-bold">
-                  ◎
-                </span>
+                <SolanaIcon className="size-4" />
                 SOL
               </span>
             </div>
@@ -218,9 +226,7 @@ function WalletPage() {
                 className="flex-1 bg-black/30 border border-white/10 rounded-md px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-orange-400/50"
               />
               <span className="inline-flex items-center gap-1.5 bg-black/30 border border-white/10 rounded-md px-3 py-2 text-sm font-medium text-white">
-                <span className="size-4 rounded-full bg-purple-500/80 grid place-items-center text-[9px] font-bold">
-                  ◎
-                </span>
+                <SolanaIcon className="size-4" />
                 SOL
               </span>
             </div>

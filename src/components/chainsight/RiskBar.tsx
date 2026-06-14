@@ -3,9 +3,11 @@ import { useCountUp } from "./CountUp";
 
 interface Props {
   score: number;
+  /** Show the 0 / review / block / 100 scale beneath the bar. */
+  showScale?: boolean;
 }
 
-export function RiskBar({ score }: Props) {
+export function RiskBar({ score, showScale = true }: Props) {
   const clamped = Math.max(0, Math.min(100, score));
   const animated = useCountUp(clamped, 800);
   const tone =
@@ -66,22 +68,24 @@ export function RiskBar({ score }: Props) {
         </div>
 
         {/* Scale labels */}
-        <div className="relative mt-0.5 h-4 text-[11px] font-mono text-muted-foreground">
-          <span className="absolute left-0">0</span>
-          <span
-            className="absolute -translate-x-1/2"
-            style={{ left: `${REVIEW_THRESHOLD}%` }}
-          >
-            review {REVIEW_THRESHOLD}
-          </span>
-          <span
-            className="absolute -translate-x-1/2"
-            style={{ left: `${BLOCK_THRESHOLD}%` }}
-          >
-            block {BLOCK_THRESHOLD}
-          </span>
-          <span className="absolute right-0">100</span>
-        </div>
+        {showScale && (
+          <div className="relative mt-0.5 h-4 text-[11px] font-mono text-muted-foreground">
+            <span className="absolute left-0">0</span>
+            <span
+              className="absolute -translate-x-1/2"
+              style={{ left: `${REVIEW_THRESHOLD}%` }}
+            >
+              review {REVIEW_THRESHOLD}
+            </span>
+            <span
+              className="absolute -translate-x-1/2"
+              style={{ left: `${BLOCK_THRESHOLD}%` }}
+            >
+              block {BLOCK_THRESHOLD}
+            </span>
+            <span className="absolute right-0">100</span>
+          </div>
+        )}
       </div>
     </div>
   );

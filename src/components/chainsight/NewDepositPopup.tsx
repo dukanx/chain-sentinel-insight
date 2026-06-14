@@ -71,13 +71,8 @@ export function NewDepositPopup({ deposit, onReview, onDismiss }: Props) {
             />
           </div>
 
-          <RiskBar score={deposit.riskScore} />
+          <RiskBar score={deposit.riskScore} showScale={false} />
         </div>
-
-        <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
-          This deposit scored in the review band — funds are held pending analyst sign-off before
-          they reach the exchange balance.
-        </p>
 
         <div className="mt-4 flex gap-2 justify-end">
           <button

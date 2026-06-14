@@ -12,7 +12,7 @@ export const EXCHANGE_NAME = "ChainSight Exchange Hot Wallet";
 export const KNOWN_LABELS = {
   ofacLazarus: "OFAC: Lazarus Group",
   ofacSdn: "OFAC SDN List",
-  tornado: "Tornado Cash mixer",
+  tornado: "gone.wtf mixer",
   sanctionedExchange: "Sanctioned exchange (Garantex)",
 } as const;
 

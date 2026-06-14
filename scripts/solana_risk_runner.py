@@ -39,13 +39,17 @@ LAZARUS_CASHOUT = "Swf8EfykLf9gTfioYikpCbLzzxJx959GRdL2ahe3c89C"   # Lazarus Gro
 SANCTIONED_MIXER = "8s4FBoBZy1pFSen8wfnQcyqjyLPKpmdhFycEGsrjze8x"  # Sanctioned mixer (dusting source)
 
 # Mixer hop (rendered purple; sits between a blocked source and the sender).
-TORNADO_CASH = "jVurrm9Forgh3ifZPDLWBYRiXUyXfFzxpVADu6uX6pb1"      # Tornado Cash mixer
+TORNADO_CASH = "jVurrm9Forgh3ifZPDLWBYRiXUyXfFzxpVADu6uX6pb1"      # gone.wtf mixer
 
 # Other legitimate wallets co-mixing through the mixer, shown as extra (valid) inflows.
 TORNADO_DEPOSITORS = [
     "nSjNA25mBLXMTgZfs4Q171ggpUoeQP5fusG4cD3SRexD",
     "tvRwVUfxaMLoMyy7voaBLjwTHNnAxAphLE9zHvxb5gs2",
 ]
+
+# A legitimate wallet co-mixing through Sinbad — the clean inflow shown next to the
+# tainted (Garantex) one so the mixer has one valid and one corrupt incoming flow.
+SINBAD_DEPOSITOR = "hWmZ4nQpR7svTfKdLb3eUaYsScx9objxqVmPiNtAuDk2"
 
 # Legitimate, labeled hubs.
 UNISWAP_ROUTER = "kSU5tjpBxgh3EAmzMfJsvzThZyFwqnqWAbnCKUB5EvaH"  # Jupiter aggregator
@@ -97,7 +101,7 @@ RARE_COUNTERPARTIES = [
 BLOCKED_WALLETS = {LAZARUS_EXPLOIT, LAZARUS_CASHOUT, SANCTIONED_MIXER, GARANTEX}
 
 LEGITIMATE_HUBS = {
-    UNISWAP_ROUTER: "Uniswap Router",
+    UNISWAP_ROUTER: "Jupiter aggregator",
     BINANCE_HOT: "Binance 14 (hot wallet)",
     COINBASE_HOT: "Coinbase (hot wallet)",
 }
@@ -110,10 +114,11 @@ FRIENDLY_WALLET_LABELS = {
     LAZARUS_EXPLOIT: "OFAC: Lazarus Group",
     LAZARUS_CASHOUT: "OFAC: Lazarus Group (cashout)",
     SANCTIONED_MIXER: "Sanctioned mixer",
-    TORNADO_CASH: "Tornado Cash mixer",
+    TORNADO_CASH: "gone.wtf mixer",
     INTERMEDIARY_HOP: "Pass-through wallet",
     TORNADO_DEPOSITORS[0]: "Depositor wallet",
     TORNADO_DEPOSITORS[1]: "Depositor wallet",
+    SINBAD_DEPOSITOR: "Depositor wallet",
     GARANTEX: "OFAC: Garantex",
     SINBAD_MIXER: "Sinbad mixer",
     WALLET_DIRECT_1HOP: "Off-ramp wallet",
@@ -329,7 +334,7 @@ def simulate_transfer_into_wallet(
 
     if pattern == "tornado":
         ensure_wallet_node(graph, LAZARUS_EXPLOIT, label="OFAC: Lazarus Group")
-        ensure_wallet_node(graph, TORNADO_CASH, label="Tornado Cash mixer")
+        ensure_wallet_node(graph, TORNADO_CASH, label="gone.wtf mixer")
         add_transaction(graph, LAZARUS_EXPLOIT, TORNADO_CASH, max(0.5, amount_sol * 2.0), transfer_slot - 420)
         add_transaction(graph, TORNADO_CASH, sender_wallet, scaled, transfer_slot - 180)
     elif pattern == "sinbad":
@@ -385,7 +390,7 @@ def inject_test_scenarios(graph: nx.DiGraph) -> None:
 
     # Indirect taint: Lazarus Group -> Tornado Cash -> pass-through -> recipient.
     graph.add_node(LAZARUS_EXPLOIT, label="OFAC: Lazarus Group", source="blocked_wallet")
-    graph.add_node(TORNADO_CASH, label="Tornado Cash mixer", source="mixer")
+    graph.add_node(TORNADO_CASH, label="gone.wtf mixer", source="mixer")
     graph.add_node(INTERMEDIARY_HOP, label="Pass-through wallet", source="test_scenario")
     graph.add_node(TEST_WALLET_INDIRECT_TAINT, label="Downstream recipient", source="test_scenario")
 
@@ -432,6 +437,11 @@ def inject_test_scenarios(graph: nx.DiGraph) -> None:
     graph.add_node(WALLET_SINBAD_2HOP, label="Off-ramp wallet", source="test_scenario")
     add_transaction(graph, GARANTEX, SINBAD_MIXER, 9.0, STARTING_SLOT + 43_000_000)
     add_transaction(graph, SINBAD_MIXER, WALLET_SINBAD_2HOP, 3.7, STARTING_SLOT + 43_000_200)
+
+    # Legitimate wallet co-mixing through Sinbad — a clean inflow shown alongside
+    # the tainted Garantex one (one valid, one corrupt entering the mixer).
+    graph.add_node(SINBAD_DEPOSITOR, label="Depositor wallet", source="mixer_inflow")
+    add_transaction(graph, SINBAD_DEPOSITOR, SINBAD_MIXER, 2.4, STARTING_SLOT + 43_000_120)
 
     # Plain peel chain, no mixer: Garantex -> hop -> hop -> wallet (3 hops).
     graph.add_node(CHAIN_HOP_1, label="Pass-through wallet", source="test_scenario")

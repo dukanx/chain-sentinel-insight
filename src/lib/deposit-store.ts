@@ -22,6 +22,26 @@ let loadSource: DepositLoadSource = "loading";
 let loadError: string | null = null;
 const loadSourceListeners = new Set<() => void>();
 
+// Cross-tab live alerts: the demo wallet usually runs in its own tab/window,
+// so its in-memory store is separate from the dashboard's. A BroadcastChannel
+// (plus a localStorage fallback for browsers/contexts where it's flaky) lets a
+// wallet-initiated send surface on the dashboard tab the moment it lands — no
+// navigation needed.
+const DEPOSIT_RELAY_KEY = "chainsight:deposit-relay";
+const depositChannel: BroadcastChannel | null =
+  typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("chainsight-deposits") : null;
+
+/** Push a freshly screened deposit to other tabs of the same origin. */
+function relayDeposit(d: Deposit) {
+  depositChannel?.postMessage({ type: "deposit:add", deposit: d });
+  try {
+    // The value must change for the `storage` event to fire in other tabs.
+    localStorage.setItem(DEPOSIT_RELAY_KEY, JSON.stringify({ deposit: d, ts: Date.now() }));
+  } catch {
+    // localStorage may be unavailable (private mode, quota) — channel still covers it.
+  }
+}
+
 let announcements: Deposit[] = [];
 const announcementListeners = new Set<() => void>();
 
@@ -29,12 +49,12 @@ function emit() {
   for (const l of listeners) l();
 }
 
-function emitLoadSource() {
-  for (const l of loadSourceListeners) l();
-}
-
 function emitAnnouncements() {
   for (const l of announcementListeners) l();
+}
+
+function emitLoadSource() {
+  for (const l of loadSourceListeners) l();
 }
 
 function setLoadSource(source: DepositLoadSource, error: string | null = null) {
@@ -78,7 +98,9 @@ export const depositStore = {
     listeners.add(fn);
     return () => listeners.delete(fn);
   },
-  add(d: Deposit, opts?: { announce?: boolean }) {
+  add(d: Deposit, opts?: { announce?: boolean; broadcast?: boolean }) {
+    // De-dupe so a deposit echoed back across tabs isn't added twice.
+    if (state.some((existing) => existing.id === d.id)) return;
     if (!hydratedFromBackend) {
       pendingLocalAdds = [d, ...pendingLocalAdds];
     }
@@ -88,6 +110,10 @@ export const depositStore = {
       emitAnnouncements();
     }
     emit();
+    // Relay live deposits to other tabs unless this add *is* a relay.
+    if (opts?.broadcast !== false) {
+      relayDeposit(d);
+    }
   },
   replaceAll(deposits: Deposit[]) {
     state = deposits;
@@ -115,6 +141,34 @@ export const depositStore = {
     return () => loadSourceListeners.delete(fn);
   },
 };
+
+// Receive live deposits relayed from another tab (e.g. the demo wallet) so they
+// surface in the dashboard feed and pop the alert. `broadcast: false` prevents an
+// echo loop; the store's id de-dupe absorbs the channel/localStorage overlap.
+function receiveRelayedDeposit(d: Deposit) {
+  depositStore.add(d, { announce: true, broadcast: false });
+}
+
+if (depositChannel) {
+  depositChannel.onmessage = (event: MessageEvent) => {
+    const msg = event.data as { type?: string; deposit?: Deposit } | null;
+    if (msg?.type === "deposit:add" && msg.deposit) {
+      receiveRelayedDeposit(msg.deposit);
+    }
+  };
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== DEPOSIT_RELAY_KEY || !event.newValue) return;
+    try {
+      const parsed = JSON.parse(event.newValue) as { deposit?: Deposit };
+      if (parsed.deposit) receiveRelayedDeposit(parsed.deposit);
+    } catch {
+      // Ignore malformed relay payloads.
+    }
+  });
+}
 
 export function useDeposits(): Deposit[] {
   return useSyncExternalStore(depositStore.subscribe, depositStore.getAll, depositStore.getAll);

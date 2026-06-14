@@ -49,9 +49,30 @@ const SYNTHETIC_ALERTS: OpsAlert[] = [
   },
 ];
 
+/** Deposits created by a send from the demo wallet carry a `dep-w-` id prefix. */
+export function isWalletSendDeposit(d: Deposit): boolean {
+  return d.id.startsWith("dep-w-");
+}
+
+/** Live alert for an outbound send screened from the demo wallet. */
+export function walletSendAlert(d: Deposit): OpsAlert {
+  return {
+    id: `alert-${d.id}`,
+    severity: "high",
+    title: "Wallet send screened",
+    summary: `Outbound ${d.amount} ${d.token} held at off-ramp — pending analyst review.`,
+    timestamp: d.receivedAt,
+    status: "pending_review",
+    caseId: d.id,
+    wallet: d.sender,
+    amount: `${d.amount} ${d.token}`,
+  };
+}
+
 export function buildSeedAlerts(deposits: Deposit[]): OpsAlert[] {
   const fromDeposits: OpsAlert[] = deposits
     .map((d) => {
+      if (isWalletSendDeposit(d)) return walletSendAlert(d);
       if (d.directHit) {
         return {
           id: `alert-${d.id}`,
@@ -129,12 +150,9 @@ export function buildSeedAlerts(deposits: Deposit[]): OpsAlert[] {
     jurisdiction: "IR",
   };
 
-  return [...fromDeposits, fiatAlert, ...SYNTHETIC_ALERTS].sort((a, b) => {
-    const sev = { critical: 0, high: 1, medium: 2, low: 3 };
-    const diff = sev[a.severity] - sev[b.severity];
-    if (diff !== 0) return diff;
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-  });
+  return [...fromDeposits, fiatAlert, ...SYNTHETIC_ALERTS].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+  );
 }
 
 export function computeHeroMetrics(deposits: Deposit[], jitter = 0): HeroMetrics {

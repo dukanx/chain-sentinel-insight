@@ -35,14 +35,14 @@ export const OFFLINE_FALLBACK_DEPOSITS: Deposit[] = [
     directHit: false,
     factors: [
       { type: "hops", text: "Funds reached the sender 2 hops downstream of a sanctioned source." },
-      { type: "mixer", text: "Path routes through Tornado Cash mixer, used to obscure fund origin." },
+      { type: "mixer", text: "Path routes through gone.wtf mixer, used to obscure fund origin." },
       { type: "obfuscation", text: "Obfuscation detected: mixer interaction — deposit pending review." },
     ],
     auditNote: "Mixer path flagged for analyst review (offline demo seed).",
     signals: {
       hopsToSanctioned: 2,
       mixerInPath: true,
-      mixerLabel: "Tornado Cash mixer",
+      mixerLabel: "gone.wtf mixer",
       exposedVolume: "1.6000 SOL",
       hopsTraced: 4,
       sanctionLabel: "OFAC: Lazarus Group",
