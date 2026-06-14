@@ -12,6 +12,7 @@ export interface DepositSignals {
   exposedVolume: string;
   hopsTraced: number;
   sanctionLabel?: string;
+  txVelocity?: string;
 }
 
 export interface DepositGraph {
@@ -23,11 +24,21 @@ export type RiskFactorType =
   | "match"
   | "hops"
   | "mixer"
+  | "obfuscation"
+  | "velocity"
   | "exposed"
   | "identity"
   | "quarantine"
   | "clean"
   | "policy";
+
+export interface BehavioralAlert {
+  type: "velocity_structuring";
+  tx_count: number;
+  window_hours: number;
+  avg_amount_sol: number;
+  pattern: "peel_chain" | "structuring";
+}
 
 export interface RiskFactor {
   type: RiskFactorType | string;
@@ -46,6 +57,7 @@ export interface Deposit {
   factors: RiskFactor[]; // structured "Why this verdict" items (from backend)
   auditNote: string; // pre-filled audit note (from backend, same source as factors)
   signals: DepositSignals;
+  behavioralAlert?: BehavioralAlert;
   graph?: DepositGraph;
   // Initial kanban column for REVIEW verdicts
   initialColumn?: KanbanColumn;

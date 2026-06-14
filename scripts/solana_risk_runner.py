@@ -73,8 +73,13 @@ WALLET_DIRECT_1HOP = "QXTTDhVfJ24NaZi3DMLMzRRyzd3nRfQfx4JJQLkNihqE"   # blocked 
 WALLET_TORNADO_2HOP = "tsFTUsLneHr3KFsZuiGiqA6Hk7qemRRqhTpnr9dJ3HX5"  # Lazarus -> Tornado -> wallet
 WALLET_SINBAD_2HOP = "zje4ubgNmqudTgbedY4EnbRDKdwuL9odEGjzFRfai5HY"   # Garantex -> Sinbad -> wallet
 WALLET_PLAIN_CHAIN = "JfQAEVNfi1rdhFtNwH2zWaxCmh68AdNmjddv76SHDF2t"   # Garantex -> hop -> hop -> wallet
+TEST_WALLET_VELOCITY_PEEL = "7xKmPqR3nWv8YtL2jHf5sDc9bAe4uGi6oNp1rTq8vXzM"  # 52 micro-tx peel chain / hour
 CHAIN_HOP_1 = "sZNbB7ha6gi2kTXmKYNHtm2vrhDovniAUSEKEbyorR6L"
 CHAIN_HOP_2 = "TPEMmyiU2273u3LLWb2wNVwDqrJMhR7DZ4WFagk7ueML"
+
+VELOCITY_TX_THRESHOLD = 50
+VELOCITY_MAX_AMOUNT_SOL = 0.5
+VELOCITY_WINDOW_HOURS = 1
 
 # Rare shared counterparties tying the identity-linked wallet to the tainted recipient.
 RARE_COUNTERPARTIES = [
@@ -115,6 +120,7 @@ FRIENDLY_WALLET_LABELS = {
     WALLET_TORNADO_2HOP: "Off-ramp wallet",
     WALLET_SINBAD_2HOP: "Off-ramp wallet",
     WALLET_PLAIN_CHAIN: "Off-ramp wallet",
+    TEST_WALLET_VELOCITY_PEEL: "Peel-chain wallet (velocity)",
     CHAIN_HOP_1: "Pass-through wallet",
     CHAIN_HOP_2: "Pass-through wallet",
 }
@@ -434,6 +440,22 @@ def inject_test_scenarios(graph: nx.DiGraph) -> None:
     add_transaction(graph, GARANTEX, CHAIN_HOP_1, 20.0, STARTING_SLOT + 44_000_000)
     add_transaction(graph, CHAIN_HOP_1, CHAIN_HOP_2, 12.0, STARTING_SLOT + 44_000_150)
     add_transaction(graph, CHAIN_HOP_2, WALLET_PLAIN_CHAIN, 5.5, STARTING_SLOT + 44_000_300)
+
+    # Velocity / structuring: 52 small outbound txs within one simulated hour.
+    graph.add_node(TEST_WALLET_VELOCITY_PEEL, label="Peel-chain wallet (velocity)", source="test_scenario")
+    peel_base_slot = STARTING_SLOT + 50_000_000
+    for index in range(52):
+        hop = generate_sol_address(set(graph.nodes) | {TEST_WALLET_VELOCITY_PEEL})
+        graph.add_node(hop, label="Peel hop", source="velocity_peel")
+        amount = round(0.08 + (index % 7) * 0.01, 4)
+        add_transaction(
+            graph,
+            TEST_WALLET_VELOCITY_PEEL,
+            hop,
+            amount,
+            peel_base_slot + index,
+        )
+    add_transaction(graph, UNISWAP_ROUTER, TEST_WALLET_VELOCITY_PEEL, 4.5, peel_base_slot - 5_000)
 
 
 def build_wallet_features(graph: nx.DiGraph) -> dict[str, WalletFeatures]:
@@ -981,18 +1003,24 @@ def _classify_wallet_risk(
             quarantine=poisoning_exposure,
         )
 
+    behavioral_alert = detect_velocity_structuring(graph, wallet_address)
+
     value_path = find_blocked_source_path(graph, wallet_address)
     value_hops = len(value_path) - 1 if value_path is not None else None
     if value_hops is not None and value_hops <= REVIEW_HOP_LIMIT:
+        risk_sources = ["value-taint path"]
+        if behavioral_alert is not None:
+            risk_sources.append("velocity structuring")
         return format_result(
             started_at,
             wallet_address,
             "REVIEW",
             value_hops,
-            risk_sources=["value-taint path"],
+            risk_sources=risk_sources,
             explanation=f"Reverse traversal found blocked source {value_hops} hops upstream.",
             signal_breakdown=signal_breakdown(graph, value_path, None, None),
             transaction_graph=build_transaction_graph(graph, wallet_address, value_path, None, None),
+            behavioral_alert=behavioral_alert,
         )
 
     identity_exposure = find_identity_exposure(graph, context, wallet_address)
@@ -1010,6 +1038,23 @@ def _classify_wallet_risk(
             signal_breakdown=signal_breakdown(graph, None, identity_exposure, None),
             transaction_graph=build_transaction_graph(graph, wallet_address, None, identity_exposure, None),
             identity_link=identity_exposure,
+            behavioral_alert=behavioral_alert,
+        )
+
+    if behavioral_alert is not None:
+        return format_result(
+            started_at,
+            wallet_address,
+            "REVIEW",
+            None,
+            risk_sources=["velocity structuring"],
+            explanation=(
+                f"Detected {behavioral_alert['tx_count']} small outbound transfers within "
+                f"{behavioral_alert['window_hours']} hour(s) — suspected peel chain / structuring."
+            ),
+            signal_breakdown=signal_breakdown(graph, None, None, None),
+            transaction_graph=build_transaction_graph(graph, wallet_address, None, None, None),
+            behavioral_alert=behavioral_alert,
         )
 
     return format_result(
@@ -1022,6 +1067,24 @@ def _classify_wallet_risk(
         signal_breakdown=signal_breakdown(graph, None, None, None),
         transaction_graph=build_transaction_graph(graph, wallet_address, None, None, None),
     )
+
+
+def detect_velocity_structuring(graph: nx.DiGraph, wallet_address: str) -> dict[str, Any] | None:
+    hour_buckets: dict[int, list[float]] = defaultdict(list)
+    for _, _, data in graph.out_edges(wallet_address, data=True):
+        hour_buckets[slot_hour(int(data["slot"]))].append(float(data["amount_sol"]))
+
+    for amounts in hour_buckets.values():
+        small = [amount for amount in amounts if amount <= VELOCITY_MAX_AMOUNT_SOL]
+        if len(small) >= VELOCITY_TX_THRESHOLD:
+            return {
+                "type": "velocity_structuring",
+                "tx_count": len(small),
+                "window_hours": VELOCITY_WINDOW_HOURS,
+                "avg_amount_sol": round(sum(small) / len(small), 4),
+                "pattern": "peel_chain",
+            }
+    return None
 
 
 def detect_poisoning_exposure(graph: nx.DiGraph, wallet_address: str) -> dict[str, Any] | None:
@@ -1117,6 +1180,7 @@ def compute_risk_score(
     signal_breakdown: dict[str, Any],
     identity_link: dict[str, Any] | None,
     quarantine: dict[str, Any] | None,
+    behavioral_alert: dict[str, Any] | None = None,
 ) -> int:
     """Deterministic 0–100 risk score derived from the verdict and signals.
 
@@ -1128,6 +1192,9 @@ def compute_risk_score(
         return 100
     if quarantine is not None:
         return 14
+    if behavioral_alert is not None and identity_link is None and verdict == "REVIEW":
+        tx_count = int(behavioral_alert.get("tx_count", 50))
+        return min(88, 72 + min(12, tx_count - 50))
     if identity_link is not None:
         return round(float(identity_link["inherited_risk_score"]))
     if verdict == "REVIEW":
@@ -1162,6 +1229,7 @@ def build_reasoning(
     signal_breakdown: dict[str, Any],
     identity_link: dict[str, Any] | None,
     quarantine: dict[str, Any] | None,
+    behavioral_alert: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, str]], str]:
     """Single source of truth for the case narrative.
 
@@ -1218,18 +1286,51 @@ def build_reasoning(
 
     if verdict == "REVIEW":
         hops = hops_detected if hops_detected is not None else int(sb.get("hops_to_sanctioned", 0))
-        factors = [
-            {"type": "hops", "text": f"Funds reached the sender {_hops_phrase(hops)} downstream of {sanction}."},
-        ]
+        factors: list[dict[str, str]] = []
+        if behavioral_alert is not None:
+            tx_count = int(behavioral_alert["tx_count"])
+            window = int(behavioral_alert["window_hours"])
+            avg = float(behavioral_alert["avg_amount_sol"])
+            factors.append(
+                {
+                    "type": "velocity",
+                    "text": (
+                        f"{tx_count} micro-transactions in {window} hour(s) "
+                        f"(avg {avg:.4f} SOL) — suspected peel chain / structuring."
+                    ),
+                }
+            )
+        if hops > 0:
+            factors.append(
+                {"type": "hops", "text": f"Funds reached the sender {_hops_phrase(hops)} downstream of {sanction}."}
+            )
         if mixer_in:
             factors.append({"type": "mixer", "text": f"Path routes through {mixer_label}, used to obscure fund origin."})
-        factors.append({"type": "exposed", "text": f"Tainted volume reaching the wallet: {_fmt_sol(exposed)}."})
-        factors.append({"type": "policy", "text": "Indirect taint within the review hop-window requires analyst review, not an auto-block."})
+            factors.append(
+                {
+                    "type": "obfuscation",
+                    "text": f"Obfuscation detected: mixer interaction ({mixer_label}) — deposit halted pending review.",
+                }
+            )
+        if hops > 0 or not behavioral_alert:
+            factors.append({"type": "exposed", "text": f"Tainted volume reaching the wallet: {_fmt_sol(exposed)}."})
+        factors.append(
+            {"type": "policy", "text": "Behavioral or indirect taint signals require analyst review, not an auto-block."}
+        )
 
-        note_parts = [f"Flagged: tainted funds reached the sender {_hops_phrase(hops)} after {sanction}."]
+        note_parts: list[str] = []
+        if behavioral_alert is not None:
+            note_parts.append(
+                f"Velocity alert: {behavioral_alert['tx_count']} micro-tx in "
+                f"{behavioral_alert['window_hours']}h (peel chain / structuring)."
+            )
+        if hops > 0:
+            note_parts.append(f"Flagged: tainted funds reached the sender {_hops_phrase(hops)} after {sanction}.")
         if mixer_in:
-            note_parts.append(f"Path includes {mixer_label}, used to obscure origin.")
-        note_parts.append(f"Exposed volume {_fmt_sol(exposed)}. Routed to analyst review per policy.")
+            note_parts.append(f"Obfuscation: path includes {mixer_label}.")
+        if hops > 0:
+            note_parts.append(f"Exposed volume {_fmt_sol(exposed)}.")
+        note_parts.append("Routed to analyst review per policy.")
         return factors, " ".join(note_parts)
 
     # NO MATCH, no quarantine — genuinely clean.
@@ -1253,9 +1354,10 @@ def format_result(
     transaction_graph: dict[str, Any],
     identity_link: dict[str, Any] | None = None,
     quarantine: dict[str, Any] | None = None,
+    behavioral_alert: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     risk_factors, audit_note = build_reasoning(
-        verdict, hops_detected, signal_breakdown, identity_link, quarantine
+        verdict, hops_detected, signal_breakdown, identity_link, quarantine, behavioral_alert
     )
     result = {
         "checked_wallet": checked_wallet,
@@ -1263,7 +1365,7 @@ def format_result(
         "hops_detected": hops_detected,
         "execution_time_ms": round((time.perf_counter() - started_at) * 1000, 3),
         "risk_score": compute_risk_score(
-            verdict, hops_detected, signal_breakdown, identity_link, quarantine
+            verdict, hops_detected, signal_breakdown, identity_link, quarantine, behavioral_alert
         ),
         "risk_sources": risk_sources,
         "explanation": explanation,
@@ -1276,6 +1378,8 @@ def format_result(
         result["identity_link"] = identity_link
     if quarantine is not None:
         result["quarantine"] = quarantine
+    if behavioral_alert is not None:
+        result["behavioral_alert"] = behavioral_alert
     return result
 
 
@@ -1306,6 +1410,7 @@ def run_test_runner() -> list[dict[str, Any]]:
         WALLET_TORNADO_2HOP,          # REVIEW  — pending
         WALLET_SINBAD_2HOP,           # REVIEW  — pending
         WALLET_PLAIN_CHAIN,           # REVIEW  — pending
+        TEST_WALLET_VELOCITY_PEEL,    # REVIEW  — velocity structuring
         WALLET_DIRECT_1HOP,           # REVIEW  — awaiting
         TEST_WALLET_IDENTITY_LINKED,  # REVIEW  — awaiting (identity link)
         TEST_WALLET_POISONED,         # CLEARED — quarantined dust

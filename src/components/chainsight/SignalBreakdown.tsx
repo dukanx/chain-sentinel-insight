@@ -1,4 +1,4 @@
-import { Layers, AlertTriangle, Coins, GitBranch } from "lucide-react";
+import { Layers, AlertTriangle, Coins, GitBranch, Zap } from "lucide-react";
 import type { Deposit } from "@/lib/mock-data";
 
 export function SignalBreakdown({ deposit }: { deposit: Deposit }) {
@@ -19,6 +19,16 @@ export function SignalBreakdown({ deposit }: { deposit: Deposit }) {
       value: s.mixerInPath ? `Yes · ${s.mixerLabel ?? "Known mixer"}` : "No",
       tone: s.mixerInPath ? "blocked" : "cleared",
     },
+    ...(s.txVelocity
+      ? [
+          {
+            icon: Zap,
+            label: "Tx velocity",
+            value: s.txVelocity,
+            tone: "review" as const,
+          },
+        ]
+      : []),
     {
       icon: Coins,
       label: "Total exposed volume",

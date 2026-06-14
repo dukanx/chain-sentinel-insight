@@ -60,6 +60,13 @@ export interface RiskRunnerResult {
     tx_signature: string;
     reason: string;
   };
+  behavioral_alert?: {
+    type: "velocity_structuring";
+    tx_count: number;
+    window_hours: number;
+    avg_amount_sol: number;
+    pattern: "peel_chain" | "structuring";
+  };
 }
 
 const RISK_API_BASE_URL = process.env.RISK_API_BASE_URL ?? "http://127.0.0.1:8000";

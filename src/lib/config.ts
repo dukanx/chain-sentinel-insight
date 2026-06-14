@@ -1,6 +1,10 @@
 export const REVIEW_THRESHOLD = 35;
 export const BLOCK_THRESHOLD = 85;
 
+export const INSTITUTION_NAME = "ChainSight Exchange";
+export const DEMO_MODE = true;
+export const DEMO_LIVE_TICK_MS = 25_000;
+
 // Must stay in sync with EXCHANGE_HOT_WALLET in scripts/solana_risk_runner.py.
 export const EXCHANGE_HOT_WALLET = "z9AL5864t9S8MfkszrWaQ6QGEA9J9EhH9QFf5m9EVpTk";
 export const EXCHANGE_NAME = "ChainSight Exchange Hot Wallet";
@@ -17,7 +21,6 @@ export interface Analyst {
   name: string;
   initials: string;
   role: string;
-  // tailwind classes for the avatar tint
   avatarBg: string;
   avatarText: string;
 }
@@ -57,5 +60,4 @@ export const ANALYSTS: Record<string, Analyst> = {
   },
 };
 
-// The signed-in analyst (mock).
 export const CURRENT_ANALYST: Analyst = ANALYSTS.mr;

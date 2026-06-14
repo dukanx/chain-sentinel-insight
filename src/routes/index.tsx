@@ -8,7 +8,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Sanctions-exposure screening for crypto exchange deposits. Trace sender history, review flagged cases, and decide with audit-grade evidence.",
+          "Pitch prototype for crypto exchange deposit screening — Command Center, SAR drafts, audit log, and KYT behavioral demos.",
       },
       { property: "og:title", content: "ChainSight — Deposit Screening" },
       {

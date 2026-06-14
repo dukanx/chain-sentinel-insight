@@ -6,15 +6,22 @@ import {
   type RiskRunnerResult,
   type RiskRunnerVerdict,
 } from "./api/risk.functions";
+import { OFFLINE_FALLBACK_DEPOSITS } from "./fallback-deposits";
+
+const RISK_API_BASE_URL =
+  (typeof process !== "undefined" && process.env.RISK_API_BASE_URL) || "http://127.0.0.1:8000";
+
+export type DepositLoadSource = "loading" | "live" | "offline" | "error";
 
 let state: Deposit[] = [...seedDeposits];
 const listeners = new Set<() => void>();
 let loadPromise: Promise<void> | null = null;
 let hydratedFromBackend = false;
 let pendingLocalAdds: Deposit[] = [];
+let loadSource: DepositLoadSource = "loading";
+let loadError: string | null = null;
+const loadSourceListeners = new Set<() => void>();
 
-// Announcements: deposits that just landed (e.g. a wallet-initiated send) and
-// should pop a "new case" notification the next time the dashboard is viewed.
 let announcements: Deposit[] = [];
 const announcementListeners = new Set<() => void>();
 
@@ -22,8 +29,45 @@ function emit() {
   for (const l of listeners) l();
 }
 
+function emitLoadSource() {
+  for (const l of loadSourceListeners) l();
+}
+
 function emitAnnouncements() {
   for (const l of announcementListeners) l();
+}
+
+function setLoadSource(source: DepositLoadSource, error: string | null = null) {
+  loadSource = source;
+  loadError = error;
+  emitLoadSource();
+}
+
+function applyDeposits(
+  deposits: Deposit[],
+  source: DepositLoadSource,
+  error: string | null = null,
+) {
+  hydratedFromBackend = source === "live";
+  depositStore.replaceAll([...pendingLocalAdds, ...deposits]);
+  pendingLocalAdds = [];
+  setLoadSource(source, error);
+}
+
+async function fetchFromRiskApi(timeoutMs = 120_000): Promise<RiskRunnerResult[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${RISK_API_BASE_URL}/api/risk/deposits`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Risk API error: ${response.status}`);
+    }
+    return (await response.json()) as RiskRunnerResult[];
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export const depositStore = {
@@ -60,10 +104,34 @@ export const depositStore = {
     announcements = announcements.filter((a) => a.id !== id);
     emitAnnouncements();
   },
+  getLoadSource(): DepositLoadSource {
+    return loadSource;
+  },
+  getLoadError(): string | null {
+    return loadError;
+  },
+  subscribeLoadSource(fn: () => void) {
+    loadSourceListeners.add(fn);
+    return () => loadSourceListeners.delete(fn);
+  },
 };
 
 export function useDeposits(): Deposit[] {
   return useSyncExternalStore(depositStore.subscribe, depositStore.getAll, depositStore.getAll);
+}
+
+export function useDepositLoadSource(): { source: DepositLoadSource; error: string | null } {
+  const source = useSyncExternalStore(
+    depositStore.subscribeLoadSource,
+    depositStore.getLoadSource,
+    depositStore.getLoadSource,
+  );
+  const error = useSyncExternalStore(
+    depositStore.subscribeLoadSource,
+    depositStore.getLoadError,
+    depositStore.getLoadError,
+  );
+  return { source, error };
 }
 
 export function useDepositAnnouncements(): Deposit[] {
@@ -74,20 +142,39 @@ export function useDepositAnnouncements(): Deposit[] {
   );
 }
 
-export function loadRiskDeposits(): Promise<void> {
+export function loadRiskDeposits(force = false): Promise<void> {
+  if (force) {
+    loadPromise = null;
+  }
   if (!loadPromise) {
-    loadPromise = getRiskDeposits()
-      .then((results) => {
-        const deposits = results.map(mapRiskResultToDeposit);
-        if (deposits.length > 0) {
-          hydratedFromBackend = true;
-          depositStore.replaceAll([...pendingLocalAdds, ...deposits]);
-          pendingLocalAdds = [];
+    setLoadSource("loading");
+    loadPromise = (async () => {
+      let results: RiskRunnerResult[] | null = null;
+      let lastError = "Unknown error";
+
+      try {
+        results = await getRiskDeposits();
+      } catch (serverFnError) {
+        lastError = serverFnError instanceof Error ? serverFnError.message : String(serverFnError);
+        try {
+          results = await fetchFromRiskApi();
+        } catch (directError) {
+          lastError = directError instanceof Error ? directError.message : String(directError);
         }
-      })
-      .catch((error) => {
-        console.warn("Risk backend unavailable; using mock deposits.", error);
-      });
+      }
+
+      if (results && results.length > 0) {
+        applyDeposits(results.map(mapRiskResultToDeposit), "live");
+        return;
+      }
+
+      console.warn("Risk backend unavailable; using offline demo deposits.", lastError);
+      applyDeposits(OFFLINE_FALLBACK_DEPOSITS, "offline", lastError);
+    })().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Failed to load deposits", error);
+      applyDeposits(OFFLINE_FALLBACK_DEPOSITS, "error", message);
+    });
   }
   return loadPromise;
 }
@@ -126,8 +213,6 @@ function graphFor(result: RiskRunnerResult): Deposit["graph"] {
       data: {
         ...node.data,
         label: displayLabel(node.data.label, node.data.address),
-        // Keep the FULL address — the graph truncates only for the compact
-        // in-node label, while the hover card shows the whole thing.
         address: node.data.address ?? "",
       },
     })),
@@ -166,7 +251,11 @@ function mapRiskResultToDeposit(result: RiskRunnerResult, index: number): Deposi
       exposedVolume: `${result.signal_breakdown.exposed_volume_sol.toFixed(4)} SOL`,
       hopsTraced: result.signal_breakdown.hops_traced,
       sanctionLabel: result.signal_breakdown.sanction_label ?? undefined,
+      txVelocity: result.behavioral_alert
+        ? `${result.behavioral_alert.tx_count} tx / ${result.behavioral_alert.window_hours}h`
+        : undefined,
     },
+    behavioralAlert: result.behavioral_alert,
     graph: graphFor(result),
     initialColumn: columnFor(result),
     assigneeId: uiVerdict === "REVIEW" ? "mr" : undefined,
@@ -215,8 +304,6 @@ export async function createWalletDepositFromBackend(opts: {
     amount: opts.amount,
     token: opts.token.toUpperCase(),
     receivedAt: new Date().toISOString(),
-    // Deterministic demo outcome: a borderline 75 score lands in REVIEW
-    // (between the 35 review and 85 block thresholds).
     riskScore: 75,
     verdict: "REVIEW",
     initialColumn: "pending",

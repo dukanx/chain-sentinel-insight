@@ -12,6 +12,8 @@ import {
   ShieldCheck,
   Scale,
   Info,
+  Zap,
+  EyeOff,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -25,14 +27,18 @@ import { AnalystAvatar } from "./AnalystAvatar";
 import { ActionDialog, type ActionKind } from "./ActionDialog";
 import { CopyAddress } from "./CopyAddress";
 import { DocumentsPanel } from "./DocumentsPanel";
+import { SarDraftPanel } from "./SarDraftPanel";
 import { truncateAddress, formatDateTime, formatRelative, nowHHMM } from "@/lib/format";
 import { EXCHANGE_HOT_WALLET, EXCHANGE_NAME } from "@/lib/config";
+import { auditLog } from "@/lib/audit-log";
 import type { EddState } from "@/lib/edd";
 
 const FACTOR_ICON: Record<string, LucideIcon> = {
   match: Ban,
   hops: Waypoints,
   mixer: Shuffle,
+  obfuscation: EyeOff,
+  velocity: Zap,
   exposed: Coins,
   identity: Fingerprint,
   quarantine: ShieldAlert,
@@ -67,11 +73,14 @@ export function CaseDetail({
 }: Props) {
   const [note, setNote] = useState(auditNote);
   const [pending, setPending] = useState<ActionKind | null>(null);
+  const [showSar, setShowSar] = useState(false);
+  const [sarDecision, setSarDecision] = useState<"BLOCKED" | "ACCEPTED" | undefined>();
 
   useEffect(() => setNote(auditNote), [auditNote, deposit.id]);
 
   const isReview = deposit.verdict === "REVIEW";
   const isTerminal = !isReview;
+  const canGenerateSar = deposit.verdict === "BLOCKED" || deposit.directHit;
 
   function appendAction(label: string) {
     const stamp = `Action: ${label} — ${nowHHMM()}`;
@@ -87,9 +96,17 @@ export function CaseDetail({
     if (pending === "block") {
       appendAction("Block deposit");
       onBlock(deposit);
+      setSarDecision("BLOCKED");
+      setShowSar(true);
+      auditLog.append("SAR_DRAFT_GENERATED", `SAR draft opened after block on ${deposit.id.toUpperCase()}.`, {
+        caseId: deposit.id,
+        wallet: deposit.sender,
+      });
       toast.error("Deposit blocked", {
         description: `${deposit.id.toUpperCase()} · ${shortSender}`,
       });
+      setPending(null);
+      return;
     } else if (pending === "accept") {
       appendAction("Accept deposit");
       onAccept(deposit);
@@ -298,8 +315,28 @@ export function CaseDetail({
           )}
 
           {isTerminal && (
-            <div className="mt-4 text-xs text-muted-foreground text-right">
-              Terminal verdict — no further action available.
+            <div className="mt-4 flex flex-wrap gap-2 justify-end">
+              {canGenerateSar && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSarDecision(deposit.verdict === "BLOCKED" ? "BLOCKED" : undefined);
+                    setShowSar(true);
+                    auditLog.append(
+                      "SAR_DRAFT_GENERATED",
+                      `Generated SAR draft for ${deposit.id.toUpperCase()}.`,
+                      { caseId: deposit.id, wallet: deposit.sender },
+                    );
+                  }}
+                  className="inline-flex items-center gap-2 rounded-md border bg-surface-2 px-3.5 py-2 text-sm transition-all hover:bg-accent"
+                >
+                  <FileText className="size-4" />
+                  Generate SAR draft
+                </button>
+              )}
+              <div className="w-full text-xs text-muted-foreground text-right">
+                Terminal verdict — no further action available.
+              </div>
             </div>
           )}
         </div>
@@ -313,6 +350,17 @@ export function CaseDetail({
           deposit={deposit}
           onConfirm={confirmAction}
           onClose={() => setPending(null)}
+        />
+      )}
+
+      {showSar && (
+        <SarDraftPanel
+          deposit={deposit}
+          analystDecision={sarDecision}
+          onClose={() => {
+            setShowSar(false);
+            onClose();
+          }}
         />
       )}
     </div>
