@@ -4,10 +4,10 @@ export type AlertSeverity = "critical" | "high" | "medium" | "low";
 export type AlertStatus = "halted_auto_freeze" | "pending_review" | "monitoring" | "cleared";
 
 export interface HeroMetrics {
-  volumeMonitoredUsd: number;
-  activeHolds: number;
-  pendingAlerts: number;
-  falsePositiveRate: number;
+  screened: number;
+  pendingReview: number;
+  blocked: number;
+  fundsOnHoldSol: number;
 }
 
 export interface OpsAlert {
@@ -22,31 +22,6 @@ export interface OpsAlert {
   amount?: string;
   jurisdiction?: string;
 }
-
-const BASE_VOLUME = 847.2;
-const BASE_HOLDS = 11;
-const BASE_FP_RATE = 4.2;
-
-const SYNTHETIC_ALERTS: OpsAlert[] = [
-  {
-    id: "syn-1",
-    severity: "medium",
-    title: "Elevated geo-risk login",
-    summary: "3 sessions from flagged RU VPN range in 15 minutes.",
-    timestamp: new Date(Date.now() - 1000 * 45).toISOString(),
-    status: "monitoring",
-    jurisdiction: "RU",
-  },
-  {
-    id: "syn-2",
-    severity: "low",
-    title: "Fiat rail velocity tick",
-    summary: "Unusual micro-wire pattern on EUR corridor — monitoring.",
-    timestamp: new Date(Date.now() - 1000 * 120).toISOString(),
-    status: "monitoring",
-    jurisdiction: "DE",
-  },
-];
 
 /** Deposits created by a send from the demo wallet carry a `dep-w-` id prefix. */
 export function isWalletSendDeposit(d: Deposit): boolean {
@@ -68,7 +43,11 @@ export function walletSendAlert(d: Deposit): OpsAlert {
   };
 }
 
-export function buildSeedAlerts(deposits: Deposit[]): OpsAlert[] {
+/**
+ * The triage queue — one alert per screened deposit that warrants attention,
+ * derived entirely from real screening output (no synthetic/fiat noise).
+ */
+export function buildTriageQueue(deposits: Deposit[]): OpsAlert[] {
   const fromDeposits: OpsAlert[] = deposits
     .map((d) => {
       if (isWalletSendDeposit(d)) return walletSendAlert(d);
@@ -139,54 +118,25 @@ export function buildSeedAlerts(deposits: Deposit[]): OpsAlert[] {
     })
     .filter(Boolean) as OpsAlert[];
 
-  const fiatAlert: OpsAlert = {
-    id: "alert-fiat-ir",
-    severity: "high",
-    title: "Fiat rail spike — IR corridor",
-    summary: "14 SWIFT-origin flags in 6 hours from high-risk jurisdiction.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 22).toISOString(),
-    status: "monitoring",
-    jurisdiction: "IR",
-  };
-
-  return [...fromDeposits, fiatAlert, ...SYNTHETIC_ALERTS].sort(
+  return fromDeposits.sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
   );
 }
 
-export function computeHeroMetrics(deposits: Deposit[], jitter = 0): HeroMetrics {
-  const blocked = deposits.filter((d) => d.verdict === "BLOCKED").length;
-  const review = deposits.filter((d) => d.verdict === "REVIEW").length;
-  return {
-    volumeMonitoredUsd: BASE_VOLUME + jitter * 0.1,
-    activeHolds: BASE_HOLDS + blocked,
-    // Match the "Needs Review" count exactly — one pending alert per REVIEW case.
-    pendingAlerts: review,
-    falsePositiveRate: BASE_FP_RATE,
-  };
+function parseAmount(amount: string): number {
+  const n = parseFloat(amount);
+  return Number.isFinite(n) ? n : 0;
 }
 
-export const SEVERITY_ORDER: AlertSeverity[] = ["critical", "high", "medium", "low"];
-
-export function nextSyntheticAlert(): OpsAlert {
-  const pool = [
-    {
-      severity: "low" as const,
-      title: "Baseline anomaly scan",
-      summary: "Routine chain scan completed — 2 wallets queued for monitoring.",
-      status: "monitoring" as const,
-    },
-    {
-      severity: "medium" as const,
-      title: "Bridge withdrawal pattern",
-      summary: "Cross-chain module (roadmap): simulated Wormhole exit flagged for review.",
-      status: "monitoring" as const,
-    },
-  ];
-  const pick = pool[Math.floor(Math.random() * pool.length)];
+export function computeHeroMetrics(deposits: Deposit[]): HeroMetrics {
+  const review = deposits.filter((d) => d.verdict === "REVIEW");
+  const blocked = deposits.filter((d) => d.verdict === "BLOCKED");
+  // Funds not credited to the customer: everything still under review or rejected.
+  const onHold = [...review, ...blocked].reduce((sum, d) => sum + parseAmount(d.amount), 0);
   return {
-    id: `syn-live-${Date.now()}`,
-    ...pick,
-    timestamp: new Date().toISOString(),
+    screened: deposits.length,
+    pendingReview: review.length,
+    blocked: blocked.length,
+    fundsOnHoldSol: Math.round(onHold * 100) / 100,
   };
 }

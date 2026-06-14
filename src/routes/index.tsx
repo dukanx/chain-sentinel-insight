@@ -4,13 +4,13 @@ import { ChainSightApp } from "@/components/chainsight/ChainSightApp";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "ChainSight — Deposit Screening" },
+      { title: "SentinelFlow — Deposit Screening" },
       {
         name: "description",
         content:
-          "Pitch prototype for crypto exchange deposit screening — Command Center, SAR drafts, audit log, and KYT behavioral demos.",
+          "Sanctions & AML deposit screening for crypto exchanges — real-time risk graph, case review, SAR drafts, and audit trail.",
       },
-      { property: "og:title", content: "ChainSight — Deposit Screening" },
+      { property: "og:title", content: "SentinelFlow — Deposit Screening" },
       {
         property: "og:description",
         content:

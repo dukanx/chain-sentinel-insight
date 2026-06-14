@@ -1,4 +1,4 @@
-import { ShieldAlert, Radio } from "lucide-react";
+import { ShieldAlert, ListChecks, CheckCircle2 } from "lucide-react";
 import type { OpsAlert } from "@/lib/demo-ops-metrics";
 import { formatRelative } from "@/lib/format";
 
@@ -26,15 +26,21 @@ export function AlertFeed({ alerts, onOpenCase }: Props) {
     <div className="rounded-xl border bg-surface overflow-hidden h-full flex flex-col">
       <div className="px-5 py-3 border-b flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Radio className="size-4 text-verdict-cleared animate-pulse" />
-          <h3 className="text-sm font-medium">Live alerts</h3>
+          <ListChecks className="size-4 text-primary" />
+          <h3 className="text-sm font-medium">Triage queue</h3>
         </div>
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          Streaming (demo)
+          {alerts.length} item{alerts.length === 1 ? "" : "s"} · click to open
         </span>
       </div>
 
       <div className="flex-1 overflow-y-auto max-h-[420px]">
+        {alerts.length === 0 && (
+          <div className="flex flex-col items-center justify-center gap-2 py-14 text-muted-foreground/70">
+            <CheckCircle2 className="size-7 text-verdict-cleared/60" />
+            <span className="text-sm">Queue clear — no deposits need attention.</span>
+          </div>
+        )}
         <ul className="divide-y">
           {alerts.map((alert) => {
             const critical = alert.severity === "critical";

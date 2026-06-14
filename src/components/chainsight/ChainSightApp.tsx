@@ -16,8 +16,9 @@ import {
   useDeposits,
   useDepositAnnouncements,
 } from "@/lib/deposit-store";
+import { toast } from "sonner";
 import { auditLog, useAuditLog } from "@/lib/audit-log";
-import { newEddRequest, type EddState } from "@/lib/edd";
+import { newEddRequest, receivedDocuments, type EddState } from "@/lib/edd";
 import { Toaster } from "@/components/ui/sonner";
 import { StatCards } from "./StatCards";
 import { NeedsReviewBoard } from "./NeedsReviewBoard";
@@ -54,8 +55,23 @@ export function ChainSightApp() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [edd, setEdd] = useState<Record<string, EddState>>({});
 
+  // Live mirrors so the simulated-upload timer can read the latest state at fire time.
+  const columnsRef = useRef(columns);
+  columnsRef.current = columns;
+  const overridesRef = useRef(overrides);
+  overridesRef.current = overrides;
+  const eddTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
   useEffect(() => {
     void loadRiskDeposits();
+  }, []);
+
+  // Clear any pending simulated-upload timers on unmount.
+  useEffect(() => {
+    const timers = eddTimers.current;
+    return () => {
+      for (const t of Object.values(timers)) clearTimeout(t);
+    };
   }, []);
 
   useEffect(() => {
@@ -144,6 +160,30 @@ export function ChainSightApp() {
     setColumns((c) => ({ ...c, [id]: col }));
   }
 
+  function clearEddTimer(id: string) {
+    if (eddTimers.current[id]) {
+      clearTimeout(eddTimers.current[id]);
+      delete eddTimers.current[id];
+    }
+  }
+
+  function markReceived(d: Deposit, auto: boolean) {
+    clearEddTimer(d.id);
+    setEdd((e) => {
+      const base = e[d.id] ?? newEddRequest();
+      return { ...e, [d.id]: { ...base, receivedAt: new Date().toISOString() } };
+    });
+    moveCard(d.id, "ready");
+    const count = receivedDocuments(d).length;
+    auditLog.append(
+      "DOCUMENTS_RECEIVED",
+      auto
+        ? `Customer uploaded ${count} document(s) for ${d.id.toUpperCase()} via Verification Center.`
+        : `${CURRENT_ANALYST.name} marked documents received for ${d.id.toUpperCase()}.`,
+      { caseId: d.id, wallet: d.sender },
+    );
+  }
+
   function handleRequestEdd(d: Deposit) {
     setEdd((e) => ({ ...e, [d.id]: e[d.id] ?? newEddRequest() }));
     moveCard(d.id, "awaiting");
@@ -151,22 +191,28 @@ export function ChainSightApp() {
       caseId: d.id,
       wallet: d.sender,
     });
+
+    // Simulate the customer responding: documents arrive shortly after the RFI,
+    // as if uploaded through their verification center and returned via webhook.
+    clearEddTimer(d.id);
+    eddTimers.current[d.id] = setTimeout(() => {
+      delete eddTimers.current[d.id];
+      if (overridesRef.current[d.id]) return; // case already decided
+      if ((columnsRef.current[d.id] ?? "pending") !== "awaiting") return; // already moved/marked
+      const count = receivedDocuments(d).length;
+      markReceived(d, true);
+      toast.info("Documents received", {
+        description: `${d.id.toUpperCase()} · ${count} files via Verification Center (Sumsub)`,
+      });
+    }, 4000);
   }
 
   function handleMarkDocs(d: Deposit) {
-    setEdd((e) => {
-      const base = e[d.id] ?? newEddRequest();
-      return { ...e, [d.id]: { ...base, receivedAt: new Date().toISOString() } };
-    });
-    moveCard(d.id, "ready");
-    auditLog.append(
-      "DOCUMENTS_RECEIVED",
-      `${CURRENT_ANALYST.name} marked documents received for ${d.id.toUpperCase()}.`,
-      { caseId: d.id, wallet: d.sender },
-    );
+    markReceived(d, false);
   }
 
   function handleBlock(d: Deposit) {
+    clearEddTimer(d.id);
     setOverrides((o) => ({ ...o, [d.id]: "BLOCKED" }));
     auditLog.append("DEPOSIT_BLOCKED", `${CURRENT_ANALYST.name} blocked deposit ${d.id.toUpperCase()}.`, {
       caseId: d.id,
@@ -175,6 +221,7 @@ export function ChainSightApp() {
   }
 
   function handleAccept(d: Deposit) {
+    clearEddTimer(d.id);
     setOverrides((o) => ({ ...o, [d.id]: "CLEARED" }));
     auditLog.append("DEPOSIT_ACCEPTED", `${CURRENT_ANALYST.name} accepted deposit ${d.id.toUpperCase()}.`, {
       caseId: d.id,
@@ -212,9 +259,9 @@ export function ChainSightApp() {
             <ShieldCheck className="size-4 text-primary" />
           </div>
           <div>
-            <div className="text-sm font-semibold tracking-tight">ChainSight</div>
+            <div className="text-sm font-semibold tracking-tight">SentinelFlow</div>
             <div className="text-[10px] uppercase tracking-wider text-sidebar-foreground/60">
-              Pitch prototype
+              Deposit Screening
             </div>
           </div>
         </div>
@@ -273,10 +320,10 @@ export function ChainSightApp() {
                 <span className="absolute inline-flex h-full w-full rounded-full bg-verdict-cleared opacity-60 animate-ping" />
                 <span className="relative inline-flex size-2 rounded-full bg-verdict-cleared" />
               </span>
-              Live screening (demo)
+              Live screening
             </div>
             <div className="mt-1.5 text-[11px] text-sidebar-foreground/60 leading-relaxed">
-              Synthetic Solana graph + simulated ops feeds for pitch demos.
+              On-chain deposits screened against the sanctions risk graph in real time.
             </div>
           </div>
         </div>

@@ -12,12 +12,11 @@ import {
 import { createWalletDepositFromBackend, depositStore } from "@/lib/deposit-store";
 import { EXCHANGE_HOT_WALLET } from "@/lib/config";
 import type { Deposit } from "@/lib/mock-data";
-import { ZkProofPanel } from "@/components/chainsight/ZkProofPanel";
 
 export const Route = createFileRoute("/wallet-zk")({
   head: () => ({
     meta: [
-      { title: "Private Wallet (zk) — ChainSight" },
+      { title: "Private Wallet (zk) — SentinelFlow" },
       {
         name: "description",
         content:
@@ -72,7 +71,7 @@ function PrivateWalletPage() {
           with a zk-STARK.
         </span>
         <Link to="/" className="underline font-medium ml-2 inline-flex items-center gap-1">
-          Back to ChainSight <ExternalLink className="size-3" />
+          Back to SentinelFlow <ExternalLink className="size-3" />
         </Link>
       </div>
 
@@ -174,7 +173,7 @@ function PrivateWalletPage() {
           onClick={() => setResult(null)}
         >
           <div
-            className="w-full max-w-lg my-8 rounded-2xl bg-[oklch(0.99_0_0)] text-foreground shadow-2xl border p-5 relative animate-pop-in"
+            className="w-full max-w-sm rounded-2xl bg-[oklch(0.99_0_0)] text-foreground shadow-2xl border p-6 relative animate-pop-in text-center"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -184,23 +183,20 @@ function PrivateWalletPage() {
             >
               <X className="size-4" />
             </button>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Private deposit · {result.verdict === "CLEARED" ? "Accepted" : "Rejected"}
-            </div>
-            <h2 className="text-lg font-medium mb-3">
-              {result.verdict === "CLEARED"
-                ? "Clean funds proven — deposit accepted"
-                : "Proof failed — deposit rejected"}
-            </h2>
-            {result.zkProof && <ZkProofPanel proof={result.zkProof} caseId={result.id} />}
-            <div className="mt-4 text-right">
-              <Link
-                to="/"
-                className="inline-flex items-center gap-1.5 text-sm rounded-md border px-3.5 py-2 hover:bg-accent"
-              >
-                Open in ChainSight <ExternalLink className="size-3.5" />
-              </Link>
-            </div>
+            <span className="mx-auto mb-3 size-14 rounded-full bg-violet-500/15 grid place-items-center">
+              <ShieldCheck className="size-7 text-violet-500" />
+            </span>
+            <h2 className="text-lg font-medium">Sent for review</h2>
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Your private withdrawal has been submitted to the exchange for compliance screening.
+              You'll be notified once a decision is made.
+            </p>
+            <button
+              onClick={() => setResult(null)}
+              className="mt-5 w-full rounded-md bg-violet-500 hover:bg-violet-600 transition-colors py-2.5 text-sm font-semibold text-white"
+            >
+              Done
+            </button>
           </div>
         </div>
       )}

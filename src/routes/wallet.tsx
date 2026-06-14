@@ -17,10 +17,10 @@ import { EXCHANGE_HOT_WALLET } from "@/lib/config";
 export const Route = createFileRoute("/wallet")({
   head: () => ({
     meta: [
-      { title: "Demo Wallet — ChainSight" },
+      { title: "Demo Wallet — SentinelFlow" },
       {
         name: "description",
-        content: "Mockup wallet used to demonstrate ChainSight deposit screening.",
+        content: "Mockup wallet used to demonstrate SentinelFlow deposit screening.",
       },
     ],
   }),
@@ -133,7 +133,7 @@ function WalletPage() {
     ]);
     setSuccess({ hash, amount, to: recipient });
 
-    // Submit to ChainSight screening in the background so the popup isn't blocked.
+    // Submit to SentinelFlow screening in the background so the popup isn't blocked.
     createWalletDepositFromBackend({ sender: WALLET_ADDRESS, amount, token: TOKEN, recipient })
       .then((dep) => depositStore.add(dep, { announce: true }))
       .catch((error) => {
@@ -147,9 +147,9 @@ function WalletPage() {
       {/* Demo banner */}
       <div className="bg-amber-100 border-b border-amber-300 text-amber-900 text-xs px-4 py-2 flex items-center justify-center gap-2">
         <ShieldCheck className="size-3.5" />
-        <span>This is a standalone mockup wallet for demo purposes — not part of ChainSight.</span>
+        <span>This is a standalone mockup wallet for demo purposes — not part of SentinelFlow.</span>
         <Link to="/" className="underline font-medium ml-2 inline-flex items-center gap-1">
-          Back to ChainSight <ExternalLink className="size-3" />
+          Back to SentinelFlow <ExternalLink className="size-3" />
         </Link>
         <Link
           to="/wallet-zk"
@@ -315,7 +315,7 @@ function WalletPage() {
               <div className="font-mono break-all">{shortenAddress(success.hash)}</div>
             </div>
             <div className="mt-4 rounded-md bg-amber-500/10 border border-amber-400/30 px-3 py-2 text-[11px] text-amber-200">
-              Confirmed on-chain · submitted to ChainSight for screening
+              Confirmed on-chain · submitted to SentinelFlow for screening
             </div>
             <div className="mt-4">
               <button

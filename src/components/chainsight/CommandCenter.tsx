@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Deposit } from "@/lib/mock-data";
 import {
-  buildSeedAlerts,
+  buildTriageQueue,
   computeHeroMetrics,
   isWalletSendDeposit,
-  nextSyntheticAlert,
   walletSendAlert,
   type OpsAlert,
 } from "@/lib/demo-ops-metrics";
-import { DEMO_LIVE_TICK_MS } from "@/lib/config";
+import { useAuditLog } from "@/lib/audit-log";
 import { HeroMetrics } from "./HeroMetrics";
 import { AlertFeed } from "./AlertFeed";
 
@@ -18,19 +17,18 @@ interface Props {
 }
 
 export function CommandCenter({ deposits, onOpenCase }: Props) {
-  const [jitter, setJitter] = useState(0);
   const [liveAlerts, setLiveAlerts] = useState<OpsAlert[]>([]);
   const seenWalletIds = useRef<Set<string>>(new Set());
   const initialized = useRef(false);
+  const audit = useAuditLog();
 
-  const metrics = useMemo(() => computeHeroMetrics(deposits, jitter), [deposits, jitter]);
+  const metrics = useMemo(() => computeHeroMetrics(deposits), [deposits]);
   const alerts = useMemo(() => {
-    const merged = [...liveAlerts, ...buildSeedAlerts(deposits)];
+    const merged = [...liveAlerts, ...buildTriageQueue(deposits)];
     // A wallet send can be present in both lists; keep the first (live) copy.
     const seen = new Set<string>();
     return merged
       .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)))
-      // Chronological — newest first — regardless of severity.
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [deposits, liveAlerts]);
 
@@ -40,8 +38,6 @@ export function CommandCenter({ deposits, onOpenCase }: Props) {
       (d) => isWalletSendDeposit(d) && !seenWalletIds.current.has(d.id),
     );
     for (const d of fresh) seenWalletIds.current.add(d.id);
-    // On first render, just record existing sends — they already show via
-    // buildSeedAlerts; only genuinely new arrivals get pinned to the top.
     if (!initialized.current) {
       initialized.current = true;
       return;
@@ -51,27 +47,15 @@ export function CommandCenter({ deposits, onOpenCase }: Props) {
     }
   }, [deposits]);
 
-  useEffect(() => {
-    const metricsTimer = setInterval(() => {
-      setJitter((j) => (j + 1) % 5);
-    }, 10_000);
-
-    const alertTimer = setInterval(() => {
-      setLiveAlerts((prev) => [nextSyntheticAlert(), ...prev].slice(0, 5));
-    }, DEMO_LIVE_TICK_MS);
-
-    return () => {
-      clearInterval(metricsTimer);
-      clearInterval(alertTimer);
-    };
-  }, []);
+  const sarCount = audit.filter((e) => e.action === "SAR_DRAFT_GENERATED").length;
 
   return (
     <div className="space-y-5">
       <HeroMetrics metrics={metrics} />
       <AlertFeed alerts={alerts} onOpenCase={onOpenCase} />
       <p className="text-xs text-muted-foreground text-center">
-        Single-chain Solana demo — production monitors multi-chain jump services (roadmap).
+        {audit.length} analyst action{audit.length === 1 ? "" : "s"} logged · {sarCount} SAR draft
+        {sarCount === 1 ? "" : "s"} this session · all figures derived from screened deposits.
       </p>
     </div>
   );

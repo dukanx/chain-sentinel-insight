@@ -1,4 +1,4 @@
-import { TrendingUp, Lock, Bell, Target } from "lucide-react";
+import { Layers, Inbox, Ban, Lock, type LucideIcon } from "lucide-react";
 import type { HeroMetrics as HeroMetricsData } from "@/lib/demo-ops-metrics";
 import { CountUp } from "./CountUp";
 
@@ -7,42 +7,47 @@ interface Props {
 }
 
 export function HeroMetrics({ metrics }: Props) {
-  const stats = [
+  const stats: {
+    label: string;
+    sub: string;
+    value: number;
+    display?: string;
+    accent: string;
+    iconWrap: string;
+    icon: LucideIcon;
+  }[] = [
     {
-      label: "Volume monitored",
-      sub: "Last 24h (simulated)",
-      value: metrics.volumeMonitoredUsd,
+      label: "Deposits today",
+      sub: "Screened this session",
+      value: metrics.screened,
       accent: "text-foreground",
       iconWrap: "bg-primary/10 text-primary",
-      icon: TrendingUp,
-      kind: "volume" as const,
+      icon: Layers,
     },
     {
-      label: "Active holds / freezes",
-      sub: "Custodial demo count",
-      value: metrics.activeHolds,
-      accent: "text-verdict-blocked",
-      iconWrap: "bg-verdict-blocked-soft text-verdict-blocked",
-      icon: Lock,
-      kind: "count" as const,
-    },
-    {
-      label: "Pending alerts",
-      sub: "Queue + review cases",
-      value: metrics.pendingAlerts,
+      label: "Needs review",
+      sub: "Awaiting analyst",
+      value: metrics.pendingReview,
       accent: "text-verdict-review",
       iconWrap: "bg-verdict-review-soft text-verdict-review",
-      icon: Bell,
-      kind: "count" as const,
+      icon: Inbox,
     },
     {
-      label: "False positive rate",
-      sub: "Dust quarantine excluded",
-      value: metrics.falsePositiveRate,
-      accent: "text-verdict-cleared",
-      iconWrap: "bg-verdict-cleared-soft text-verdict-cleared",
-      icon: Target,
-      kind: "rate" as const,
+      label: "Blocked",
+      sub: "Halted at off-ramp",
+      value: metrics.blocked,
+      accent: "text-verdict-blocked",
+      iconWrap: "bg-verdict-blocked-soft text-verdict-blocked",
+      icon: Ban,
+    },
+    {
+      label: "Funds on hold",
+      sub: "Review + blocked, not credited",
+      value: metrics.fundsOnHoldSol,
+      display: `${metrics.fundsOnHoldSol.toFixed(2)} SOL`,
+      accent: "text-foreground",
+      iconWrap: "bg-col-awaiting/15 text-col-awaiting",
+      icon: Lock,
     },
   ];
 
@@ -61,13 +66,7 @@ export function HeroMetrics({ metrics }: Props) {
                 {s.label}
               </div>
               <div className={`mt-1 text-3xl font-mono font-semibold tabular-nums ${s.accent}`}>
-                {s.kind === "volume" ? (
-                  `$${metrics.volumeMonitoredUsd.toFixed(1)}M`
-                ) : s.kind === "rate" ? (
-                  `${metrics.falsePositiveRate.toFixed(1)}%`
-                ) : (
-                  <CountUp value={s.value} />
-                )}
+                {s.display ?? <CountUp value={s.value} />}
               </div>
               <div className="mt-1 text-[10px] text-muted-foreground">{s.sub}</div>
             </div>
